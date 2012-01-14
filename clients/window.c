@@ -1677,6 +1677,18 @@ input_handle_touch_cancel(void *data,
 {
 }
 
+static void
+input_handle_surface_move_motion(void *data,
+			  struct wl_input_device *wl_input_device)
+{
+}
+
+static void
+input_handle_surface_move_stop(void *data,
+			  struct wl_input_device *wl_input_device)
+{
+}
+
 static const struct wl_input_device_listener input_device_listener = {
 	input_handle_motion,
 	input_handle_button,
@@ -1688,6 +1700,8 @@ static const struct wl_input_device_listener input_device_listener = {
 	input_handle_touch_motion,
 	input_handle_touch_frame,
 	input_handle_touch_cancel,
+	input_handle_surface_move_motion,
+	input_handle_surface_move_stop
 };
 
 void

@@ -66,6 +66,10 @@ struct wl_shell {
 	} screensaver;
 };
 
+struct wl_resource *move_cursor_pointer_resource;
+int move_cursor_hotspot_x;
+int move_cursor_hotspot_y;
+
 enum shell_surface_type {
 	SHELL_SURFACE_NONE,
 
@@ -189,6 +193,8 @@ weston_surface_move(struct weston_surface *es,
 	move->surface = es;
 
 	wl_input_device_start_grab(&wd->input_device, &move->grab, time);
+	
+	weston_change_input_pointer(wd, move_cursor_pointer_resource, move_cursor_hotspot_x, move_cursor_hotspot_y);
 
 	wl_input_device_set_pointer_focus(&wd->input_device,
 					  NULL, time, 0, 0, 0, 0);
@@ -202,7 +208,7 @@ shell_surface_move(struct wl_client *client, struct wl_resource *resource,
 {
 	struct weston_input_device *wd = input_resource->data;
 	struct shell_surface *shsurf = resource->data;
-
+	
 	if (wd->input_device.button_count == 0 ||
 	    wd->input_device.grab_time != time ||
 	    wd->input_device.pointer_focus != &shsurf->surface->surface)
@@ -253,7 +259,7 @@ resize_grab_button(struct wl_grab *grab,
 		   uint32_t time, int32_t button, int32_t state)
 {
 	struct wl_input_device *device = grab->input_device;
-
+	
 	if (device->button_count == 0 && state == 0) {
 		wl_input_device_end_grab(device, time);
 		free(grab);
@@ -466,6 +472,7 @@ popup_grab_button(struct wl_grab *grab,
 	struct shell_surface *shsurf =
 		container_of(grab, struct shell_surface, popup.grab);
 
+
 	resource = grab->input_device->pointer_focus_resource;
 	if (resource) {
 		wl_resource_post_event(resource, WL_INPUT_DEVICE_BUTTON,
@@ -478,7 +485,7 @@ popup_grab_button(struct wl_grab *grab,
 		wl_input_device_end_grab(grab->input_device, time);
 		shsurf->popup.grab.input_device = NULL;
 	}
-
+	
 	if (state == 0)
 		shsurf->popup.initial_up = 1;
 }
@@ -847,11 +854,26 @@ desktop_shell_unlock(struct wl_client *client,
 		resume_desktop(shell);
 }
 
+static void 
+desktop_shell_set_move_pointer(struct wl_client *client,
+				 struct wl_resource *resource,
+				 struct wl_resource *surface,
+				 int32_t hotspot_x,
+				 int32_t hotspot_y)
+{
+	struct wl_shell *shell = resource->data;
+	
+	move_cursor_pointer_resource = surface;
+	move_cursor_hotspot_x = hotspot_x;
+	move_cursor_hotspot_y = hotspot_y;
+}
+
 static const struct desktop_shell_interface desktop_shell_implementation = {
 	desktop_shell_set_background,
 	desktop_shell_set_panel,
 	desktop_shell_set_lock_surface,
-	desktop_shell_unlock
+	desktop_shell_unlock,
+	desktop_shell_set_move_pointer
 };
 
 static enum shell_surface_type
@@ -1419,6 +1441,9 @@ shell_init(struct weston_compositor *ec)
 	shell->shell.map = map;
 	shell->shell.configure = configure;
 	shell->shell.destroy = shell_destroy;
+	move_cursor_pointer_resource= NULL;
+	move_cursor_hotspot_x = 0;
+	move_cursor_hotspot_y = 0;
 
 	wl_list_init(&shell->hidden_surface_list);
 	wl_list_init(&shell->backgrounds);

@@ -622,6 +622,23 @@ create_output(struct desktop *desktop, uint32_t id)
 }
 
 static void
+init_move_cursor(struct desktop* desktop)
+{
+	cairo_surface_t* psurface;
+	struct display* display;
+	struct wl_buffer *buffer;
+	int h, w, hx, hy;
+	
+	display = desktop->display;
+	
+	psurface = display_get_pointer_surface(display, POINTER_DRAGGING, &w, &h, &hx, &hy);
+	
+	buffer = display_get_buffer_for_surface(display, psurface);
+	
+	desktop_shell_set_move_pointer(desktop->shell, buffer, hx, hy);
+}
+
+static void
 global_handler(struct wl_display *display, uint32_t id,
 	       const char *interface, uint32_t version, void *data)
 {
@@ -631,6 +648,7 @@ global_handler(struct wl_display *display, uint32_t id,
 		desktop->shell =
 			wl_display_bind(display, id, &desktop_shell_interface);
 		desktop_shell_add_listener(desktop->shell, &listener, desktop);
+		init_move_cursor(desktop);
 	} else if (!strcmp(interface, "wl_output")) {
 		create_output(desktop, id);
 	}

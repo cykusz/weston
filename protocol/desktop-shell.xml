@@ -16,6 +16,12 @@
     </request>
 
     <request name="unlock"/>
+    
+    <request name="set_move_pointer">
+      <arg name="surface" type="object" interface="wl_buffer"/>
+      <arg name="hotspot_x" type="int"/>
+      <arg name="hotspot_y" type="int"/>
+    </request>
 
     <!-- We'll fold most of wl_shell into this interface and then
          they'll share the configure event.  -->

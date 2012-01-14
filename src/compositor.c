@@ -1513,26 +1513,12 @@ notify_touch(struct wl_input_device *device, uint32_t time, int touch_id,
 	}
 }
 
-static void
-input_device_attach(struct wl_client *client,
-		    struct wl_resource *resource,
-		    uint32_t time,
-		    struct wl_resource *buffer_resource, int32_t x, int32_t y)
+WL_EXPORT void
+weston_change_input_pointer(struct weston_input_device *device, struct wl_resource *buffer_resource, int32_t x, int32_t y)
 {
-	struct weston_input_device *device = resource->data;
-	struct weston_compositor *compositor = device->compositor;
 	struct wl_buffer *buffer;
-
-	if (time < device->input_device.pointer_focus_time)
-		return;
-	if (device->input_device.pointer_focus == NULL)
-		return;
-	if (device->input_device.pointer_focus->resource.client != client)
-		return;
-
-	if (device->sprite)
-		weston_surface_damage_below(device->sprite);
-
+	struct weston_compositor *compositor = device->compositor;
+	
 	if (!buffer_resource) {
 		if (device->sprite) {
 			destroy_surface(&device->sprite->surface.resource);
@@ -1560,6 +1546,27 @@ input_device_attach(struct wl_client *client,
 	device->sprite->y = device->input_device.y - device->hotspot_y;
 
 	weston_surface_damage(device->sprite);
+}
+
+static void
+input_device_attach(struct wl_client *client,
+		    struct wl_resource *resource,
+		    uint32_t time,
+		    struct wl_resource *buffer_resource, int32_t x, int32_t y)
+{
+	struct weston_input_device *device = resource->data;
+
+	if (time < device->input_device.pointer_focus_time)
+		return;
+	if (device->input_device.pointer_focus == NULL)
+		return;
+	if (device->input_device.pointer_focus->resource.client != client)
+		return;
+
+	if (device->sprite)
+		weston_surface_damage_below(device->sprite);
+
+	weston_change_input_pointer(device, buffer_resource, x, y);
 }
 
 const static struct wl_input_device_interface input_device_interface = {
