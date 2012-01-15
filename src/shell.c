@@ -64,11 +64,11 @@ struct wl_shell {
 		struct wl_list surfaces;
 		struct weston_process process;
 	} screensaver;
+	
+	struct wl_resource *move_cursor_pointer_resource;
+	int move_cursor_hotspot_x;
+	int move_cursor_hotspot_y;
 };
-
-struct wl_resource *move_cursor_pointer_resource;
-int move_cursor_hotspot_x;
-int move_cursor_hotspot_y;
 
 enum shell_surface_type {
 	SHELL_SURFACE_NONE,
@@ -191,10 +191,14 @@ weston_surface_move(struct weston_surface *es,
 	move->dx = es->x - wd->input_device.grab_x;
 	move->dy = es->y - wd->input_device.grab_y;
 	move->surface = es;
+	
+	struct weston_shell* weston_shell = wd->compositor->shell;
+	
+	struct wl_shell* shell = container_of(weston_shell, struct wl_shell, shell);
 
 	wl_input_device_start_grab(&wd->input_device, &move->grab, time);
 	
-	weston_change_input_pointer(wd, move_cursor_pointer_resource, move_cursor_hotspot_x, move_cursor_hotspot_y);
+	weston_change_input_pointer(wd, shell->move_cursor_pointer_resource, shell->move_cursor_hotspot_x, shell->move_cursor_hotspot_y);
 
 	wl_input_device_set_pointer_focus(&wd->input_device,
 					  NULL, time, 0, 0, 0, 0);
@@ -863,9 +867,9 @@ desktop_shell_set_move_pointer(struct wl_client *client,
 {
 	struct wl_shell *shell = resource->data;
 	
-	move_cursor_pointer_resource = surface;
-	move_cursor_hotspot_x = hotspot_x;
-	move_cursor_hotspot_y = hotspot_y;
+	shell->move_cursor_pointer_resource = surface;
+	shell->move_cursor_hotspot_x = hotspot_x;
+	shell->move_cursor_hotspot_y = hotspot_y;
 }
 
 static const struct desktop_shell_interface desktop_shell_implementation = {
@@ -1441,9 +1445,9 @@ shell_init(struct weston_compositor *ec)
 	shell->shell.map = map;
 	shell->shell.configure = configure;
 	shell->shell.destroy = shell_destroy;
-	move_cursor_pointer_resource= NULL;
-	move_cursor_hotspot_x = 0;
-	move_cursor_hotspot_y = 0;
+	shell->move_cursor_pointer_resource= NULL;
+	shell->move_cursor_hotspot_x = 0;
+	shell->move_cursor_hotspot_y = 0;
 
 	wl_list_init(&shell->hidden_surface_list);
 	wl_list_init(&shell->backgrounds);
