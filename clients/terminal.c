@@ -2252,6 +2252,16 @@ motion_handler(struct widget *widget,
 	return POINTER_IBEAM;
 }
 
+static int
+enter_handler(struct widget *widget,
+	       struct input *input, uint32_t time,
+	       int32_t x, int32_t y, void *data)
+{
+	struct terminal *terminal = data;
+	
+	return POINTER_IBEAM;
+}
+
 static struct terminal *
 terminal_create(struct display *display, int fullscreen)
 {
@@ -2287,6 +2297,7 @@ terminal_create(struct display *display, int fullscreen)
 	widget_set_resize_handler(terminal->widget, resize_handler);
 	widget_set_button_handler(terminal->widget, button_handler);
 	widget_set_motion_handler(terminal->widget, motion_handler);
+	widget_set_enter_handler(terminal->widget, enter_handler);
 
 	surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 0, 0);
 	cr = cairo_create(surface);

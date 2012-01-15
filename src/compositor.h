@@ -442,7 +442,7 @@ void
 weston_xserver_set_selection(struct weston_input_device *device);
 
 void
-weston_change_input_pointer(struct weston_input_device *device, struct wl_resource *buffer_resource, int32_t x, int32_t y);
+weston_set_input_pointer(struct weston_input_device *device, struct wl_resource *buffer_resource, int32_t x, int32_t y);
 
 struct weston_zoom;
 typedef	void (*weston_zoom_done_func_t)(struct weston_zoom *zoom, void *data);

@@ -198,7 +198,7 @@ weston_surface_move(struct weston_surface *es,
 
 	wl_input_device_start_grab(&wd->input_device, &move->grab, time);
 	
-	weston_change_input_pointer(wd, shell->move_cursor_pointer_resource, shell->move_cursor_hotspot_x, shell->move_cursor_hotspot_y);
+	weston_set_input_pointer(wd, shell->move_cursor_pointer_resource, shell->move_cursor_hotspot_x, shell->move_cursor_hotspot_y);
 
 	wl_input_device_set_pointer_focus(&wd->input_device,
 					  NULL, time, 0, 0, 0, 0);

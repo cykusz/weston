@@ -1514,7 +1514,7 @@ notify_touch(struct wl_input_device *device, uint32_t time, int touch_id,
 }
 
 WL_EXPORT void
-weston_change_input_pointer(struct weston_input_device *device, struct wl_resource *buffer_resource, int32_t x, int32_t y)
+weston_set_input_pointer(struct weston_input_device *device, struct wl_resource *buffer_resource, int32_t x, int32_t y)
 {
 	struct wl_buffer *buffer;
 	struct weston_compositor *compositor = device->compositor;
@@ -1566,7 +1566,7 @@ input_device_attach(struct wl_client *client,
 	if (device->sprite)
 		weston_surface_damage_below(device->sprite);
 
-	weston_change_input_pointer(device, buffer_resource, x, y);
+	weston_set_input_pointer(device, buffer_resource, x, y);
 }
 
 const static struct wl_input_device_interface input_device_interface = {
