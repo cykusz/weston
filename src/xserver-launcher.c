@@ -1295,8 +1295,8 @@ static int
 weston_xserver_handle_event(int listen_fd, uint32_t mask, void *data)
 {
 	struct weston_xserver *mxs = data;
-	char display[8], s[8], logfile[32];
-	int sv[2], flags;
+	char display[8], s[8];
+	int sv[2], client_fd;
 
 	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) < 0) {
 		fprintf(stderr, "socketpair failed\n");
@@ -1308,16 +1308,14 @@ weston_xserver_handle_event(int listen_fd, uint32_t mask, void *data)
 	case 0:
 		/* SOCK_CLOEXEC closes both ends, so we need to unset
 		 * the flag on the client fd. */
-		flags = fcntl(sv[1], F_GETFD);
-		if (flags != -1)
-			fcntl(sv[1], F_SETFD, flags & ~FD_CLOEXEC);
+		client_fd = dup(sv[1]);
+		if (client_fd < 0)
+			return 1;
 
-		snprintf(s, sizeof s, "%d", sv[1]);
+		snprintf(s, sizeof s, "%d", client_fd);
 		setenv("WAYLAND_SOCKET", s, 1);
 
 		snprintf(display, sizeof display, ":%d", mxs->display);
-		snprintf(logfile, sizeof logfile,
-			 "/tmp/x-log-%d", mxs->display);
 
 		if (execl(XSERVER_PATH,
 			  XSERVER_PATH,
@@ -1325,7 +1323,6 @@ weston_xserver_handle_event(int listen_fd, uint32_t mask, void *data)
 			  "-wayland",
 			  "-rootless",
 			  "-retro",
-			  "-logfile", logfile,
 			  "-nolisten", "all",
 			  "-terminate",
 			  NULL) < 0)
@@ -1613,7 +1610,7 @@ weston_xserver_init(struct weston_compositor *compositor)
 {
 	struct wl_display *display = compositor->wl_display;
 	struct weston_xserver *mxs;
-	char lockfile[256];
+	char lockfile[256], display_name[8];
 
 	mxs = malloc(sizeof *mxs);
 	memset(mxs, 0, sizeof *mxs);
@@ -1652,7 +1649,9 @@ weston_xserver_init(struct weston_compositor *compositor)
 		return -1;
 	}
 
-	fprintf(stderr, "xserver listening on display :%d\n", mxs->display);
+	snprintf(display_name, sizeof display_name, ":%d", mxs->display);
+	fprintf(stderr, "xserver listening on display %s\n", display_name);
+	setenv("DISPLAY", display_name, 1);
 
 	mxs->loop = wl_display_get_event_loop(display);
 	mxs->abstract_source =

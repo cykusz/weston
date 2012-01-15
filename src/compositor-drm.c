@@ -840,6 +840,14 @@ drm_compositor_create(struct wl_display *display,
 		return NULL;
 	}
 
+	ec->base.wl_display = display;
+	ec->tty = tty_create(&ec->base, vt_func, tty);
+	if (!ec->tty) {
+		fprintf(stderr, "failed to initialize tty\n");
+		free(ec);
+		return NULL;
+	}
+
 	e = udev_enumerate_new(ec->udev);
 	udev_enumerate_add_match_subsystem(e, "drm");
 	udev_enumerate_add_match_sysname(e, "card[0-9]*");
@@ -865,7 +873,6 @@ drm_compositor_create(struct wl_display *display,
 		return NULL;
 	}
 
-	ec->base.wl_display = display;
 	if (init_egl(ec, drm_device) < 0) {
 		fprintf(stderr, "failed to initialize egl\n");
 		return NULL;
@@ -901,7 +908,6 @@ drm_compositor_create(struct wl_display *display,
 	ec->drm_source =
 		wl_event_loop_add_fd(loop, ec->drm.fd,
 				     WL_EVENT_READABLE, on_drm_input, ec);
-	ec->tty = tty_create(&ec->base, vt_func, tty);
 
 	ec->udev_monitor = udev_monitor_new_from_netlink(ec->udev, "udev");
 	if (ec->udev_monitor == NULL) {
@@ -932,7 +938,7 @@ backend_init(struct wl_display *display, char *options)
 	int connector = 0, i;
 	const char *seat;
 	char *p, *value;
-	int tty = 1;
+	int tty = 0;
 
 	static char * const tokens[] = { "connector", "seat", "tty", NULL };
 
