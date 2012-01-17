@@ -45,6 +45,9 @@ struct wl_shell {
 		struct weston_process process;
 		struct wl_client *client;
 		struct wl_resource *desktop_shell;
+
+		unsigned deathcount;
+		uint32_t deathstamp;
 	} child;
 
 	bool locked;
@@ -1290,14 +1293,33 @@ configure(struct weston_shell *base, struct weston_surface *surface,
 	}
 }
 
+static int launch_desktop_shell_process(struct wl_shell *shell);
+
 static void
 desktop_shell_sigchld(struct weston_process *process, int status)
 {
+	uint32_t time;
 	struct wl_shell *shell =
 		container_of(process, struct wl_shell, child.process);
 
 	shell->child.process.pid = 0;
 	shell->child.client = NULL; /* already destroyed by wayland */
+
+	/* if desktop-shell dies more than 5 times in 30 seconds, give up */
+	time = weston_compositor_get_time();
+	if (time - shell->child.deathstamp > 30000) {
+		shell->child.deathstamp = time;
+		shell->child.deathcount = 0;
+	}
+
+	shell->child.deathcount++;
+	if (shell->child.deathcount > 5) {
+		fprintf(stderr, "weston-desktop-shell died, giving up.\n");
+		return;
+	}
+
+	fprintf(stderr, "weston-desktop-shell died, respawning...\n");
+	launch_desktop_shell_process(shell);
 }
 
 static int
@@ -1470,6 +1492,7 @@ shell_init(struct weston_compositor *ec)
 				  shell, bind_screensaver) == NULL)
 		return -1;
 
+	shell->child.deathstamp = weston_compositor_get_time();
 	if (launch_desktop_shell_process(shell) != 0)
 		return -1;
 
