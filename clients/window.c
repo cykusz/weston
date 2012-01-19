@@ -130,8 +130,8 @@ struct window {
 	window_drop_handler_t drop_handler;
 	window_close_handler_t close_handler;
 
+	struct frame *frame;
 	struct widget *widget;
-	struct window *menu;
 
 	void *user_data;
 	struct wl_list link;
@@ -956,6 +956,8 @@ window_create_surface(struct window *window)
 	cairo_surface_destroy(surface);
 }
 
+static void frame_destroy(struct frame *frame);
+
 void
 window_destroy(struct window *window)
 {
@@ -970,12 +972,12 @@ window_destroy(struct window *window)
 	wl_list_for_each(input, &display->input_list, link) {
 		if (input->pointer_focus == window)
 			input->pointer_focus = NULL;
-		if (input->focus_widget &&
-		    input->focus_widget->window == window)
-			input->focus_widget = NULL;
 		if (input->keyboard_focus == window)
 			input->keyboard_focus = NULL;
 	}
+
+	if (window->frame)
+		frame_destroy(window->frame);
 
 	if (window->shell_surface)
 		wl_shell_surface_destroy(window->shell_surface);
@@ -1050,6 +1052,14 @@ widget_add_widget(struct widget *parent, void *data)
 void
 widget_destroy(struct widget *widget)
 {
+	struct display *display = widget->window->display;
+	struct input *input;
+
+	wl_list_for_each(input, &display->input_list, link) {
+		if (input->focus_widget == widget)
+			input->focus_widget = NULL;
+	}
+
 	wl_list_remove(&widget->link);
 	free(widget);
 }
@@ -1383,13 +1393,8 @@ frame_button_handler(struct widget *widget,
 		}
 	} else if (button == BTN_RIGHT && state == 1) {
 		input_get_position(input, &x, &y);
-		window->menu = window_create_menu(window->display,
-						  input, time,
-						  window,
-						  x - 10, y - 10,
-						  frame_menu_func,
-						  entries, 4);
-		window_schedule_redraw(window->menu);
+		window_show_menu(window->display, input, time, window,
+				 x - 10, y - 10, frame_menu_func, entries, 4);
 	}
 }
 
@@ -1411,7 +1416,17 @@ frame_create(struct window *window, void *data)
 	widget_set_motion_handler(frame->widget, frame_motion_handler);
 	widget_set_button_handler(frame->widget, frame_button_handler);
 
+	window->frame = frame;
+
 	return frame->child;
+}
+
+static void
+frame_destroy(struct frame *frame)
+{
+	/* frame->child must be destroyed by the application */
+	widget_destroy(frame->widget);
+	free(frame);
 }
 
 static void
@@ -2075,6 +2090,14 @@ handle_configure(void *data, struct wl_shell_surface *shell_surface,
 }
 
 static void
+menu_destroy(struct menu *menu)
+{
+	widget_destroy(menu->widget);
+	window_destroy(menu->window);
+	free(menu);
+}
+
+static void
 handle_popup_done(void *data, struct wl_shell_surface *shell_surface)
 {
 	struct window *window = data;
@@ -2087,7 +2110,7 @@ handle_popup_done(void *data, struct wl_shell_surface *shell_surface)
 
 	menu->func(window->parent, menu->current, window->parent->user_data);
 	input_ungrab(menu->input, 0);
-	window_destroy(window);
+	menu_destroy(menu);
 }
 
 static const struct wl_shell_surface_listener shell_surface_listener = {
@@ -2386,7 +2409,7 @@ menu_button_handler(struct widget *widget,
 		menu->func(menu->window->parent, 
 			   menu->current, menu->window->parent->user_data);
 		input_ungrab(input, time);
-		window_destroy(menu->widget->window);
+		menu_destroy(menu);
 	}
 }
 
@@ -2430,11 +2453,11 @@ menu_redraw_handler(struct widget *widget, void *data)
 	cairo_destroy(cr);
 }
 
-struct window *
-window_create_menu(struct display *display,
-		   struct input *input, uint32_t time, struct window *parent,
-		   int32_t x, int32_t y,
-		   menu_func_t func, const char **entries, int count)
+void
+window_show_menu(struct display *display,
+		 struct input *input, uint32_t time, struct window *parent,
+		 int32_t x, int32_t y,
+		 menu_func_t func, const char **entries, int count)
 {
 	struct window *window;
 	struct menu *menu;
@@ -2442,12 +2465,12 @@ window_create_menu(struct display *display,
 
 	menu = malloc(sizeof *menu);
 	if (!menu)
-		return NULL;
+		return;
 
 	window = window_create_internal(parent->display, parent,
 					200, count * 20 + margin * 2);
 	if (!window)
-		return NULL;
+		return;
 
 	menu->window = window;
 	menu->widget = window_add_widget(menu->window, menu);
@@ -2473,8 +2496,7 @@ window_create_menu(struct display *display,
 	widget_set_button_handler(menu->widget, menu_button_handler);
 
 	input_grab(input, menu->widget, 0);
-
-	return window;
+	window_schedule_redraw(window);
 }
 
 void
@@ -2757,13 +2779,24 @@ init_egl(struct display *d)
 		EGL_NONE
 	};
 
+#ifdef USE_CAIRO_GLESV2
+	static const EGLint context_attribs[] = {
+		EGL_CONTEXT_CLIENT_VERSION, 2,
+		EGL_NONE
+	};
+	EGLint api = EGL_OPENGL_ES_API;
+#else
+	EGLint *context_attribs = NULL;
+	EGLint api = EGL_OPENGL_API;
+#endif
+
 	d->dpy = eglGetDisplay(d->display);
 	if (!eglInitialize(d->dpy, &major, &minor)) {
 		fprintf(stderr, "failed to initialize display\n");
 		return -1;
 	}
 
-	if (!eglBindAPI(EGL_OPENGL_API)) {
+	if (!eglBindAPI(api)) {
 		fprintf(stderr, "failed to bind api EGL_OPENGL_API\n");
 		return -1;
 	}
@@ -2780,13 +2813,14 @@ init_egl(struct display *d)
 		return -1;
 	}
 
-	d->rgb_ctx = eglCreateContext(d->dpy, d->rgb_config, EGL_NO_CONTEXT, NULL);
+	d->rgb_ctx = eglCreateContext(d->dpy, d->rgb_config,
+				      EGL_NO_CONTEXT, context_attribs);
 	if (d->rgb_ctx == NULL) {
 		fprintf(stderr, "failed to create context\n");
 		return -1;
 	}
 	d->argb_ctx = eglCreateContext(d->dpy, d->argb_config,
-				       EGL_NO_CONTEXT, NULL);
+				       EGL_NO_CONTEXT, context_attribs);
 	if (d->argb_ctx == NULL) {
 		fprintf(stderr, "failed to create context\n");
 		return -1;

@@ -287,6 +287,21 @@ weston_surface_damage_below(struct weston_surface *surface)
 	weston_compositor_schedule_repaint(surface->compositor);
 }
 
+static void
+weston_surface_flush_damage(struct weston_surface *surface)
+{
+	struct weston_surface *below;
+
+	if (surface->output &&
+	    surface->link.next != &surface->compositor->surface_list) {
+		below = container_of(surface->link.next,
+				     struct weston_surface, link);
+
+		pixman_region32_union(&below->damage,
+				      &below->damage, &surface->damage);
+	}
+}
+
 WL_EXPORT void
 weston_surface_configure(struct weston_surface *surface,
 			 int x, int y, int width, int height)
@@ -376,6 +391,7 @@ destroy_surface(struct wl_resource *resource)
 	struct weston_compositor *compositor = surface->compositor;
 
 	weston_surface_damage_below(surface);
+	weston_surface_flush_damage(surface);
 
 	wl_list_remove(&surface->link);
 	weston_compositor_repick(compositor);
@@ -840,9 +856,8 @@ struct weston_frame_callback {
 };
 
 static void
-repaint(void *data, int msecs)
+repaint(struct weston_output *output, int msecs)
 {
-	struct weston_output *output = data;
 	struct weston_compositor *compositor = output->compositor;
 	struct weston_animation *animation, *next;
 	struct weston_frame_callback *cb, *cnext;
@@ -865,7 +880,11 @@ repaint(void *data, int msecs)
 static void
 idle_repaint(void *data)
 {
-	repaint(data, weston_compositor_get_time());
+	struct weston_output *output = data;
+
+	/* An idle repaint may have been cancelled by vt switching away. */
+	if (output->repaint_needed)
+		repaint(output, weston_compositor_get_time());
 }
 
 WL_EXPORT void
@@ -2121,6 +2140,7 @@ int main(int argc, char *argv[])
 
 	segv_action.sa_flags = SA_SIGINFO | SA_RESETHAND;
 	segv_action.sa_sigaction = on_segv_signal;
+	sigemptyset(&segv_action.sa_mask);
 	sigaction(SIGSEGV, &segv_action, NULL);
 
 	if (!backend) {

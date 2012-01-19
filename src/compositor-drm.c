@@ -112,9 +112,12 @@ drm_output_present(struct weston_output *output_base)
 		fb_id = output->fb_id[output->current ^ 1];
 	}
 
-	drmModePageFlip(c->drm.fd, output->crtc_id,
-			fb_id,
-			DRM_MODE_PAGE_FLIP_EVENT, output);
+	if (drmModePageFlip(c->drm.fd, output->crtc_id,
+			    fb_id,
+			    DRM_MODE_PAGE_FLIP_EVENT, output) < 0) {
+		fprintf(stderr, "queueing pageflip failed: %m\n");
+		return -1;
+	}
 
 	return 0;
 }
@@ -226,16 +229,18 @@ drm_output_set_cursor(struct weston_output *output_base,
 					  c->base.display,
 					  eid->sprite->image, 64, 64,
 					  GBM_BO_USE_CURSOR_64X64);
+	/* Not suitable for hw cursor, fall back */
+	if (bo == NULL)
+		goto out;
 
 	handle = gbm_bo_get_handle(bo).s32;
 	stride = gbm_bo_get_pitch(bo);
-
 	gbm_bo_destroy(bo);
 
-	if (stride != 64 * 4) {
-		fprintf(stderr, "info: cursor stride is != 64\n");
+	/* gbm_bo_create_from_egl_image() didn't always validate the usage
+	 * flags, and in that case we might end up with a bad stride. */
+	if (stride != 64 * 4)
 		goto out;
-	}
 
 	ret = drmModeSetCursor(c->drm.fd, output->crtc_id, handle, 64, 64);
 	if (ret) {
@@ -777,12 +782,35 @@ drm_destroy(struct weston_compositor *ec)
 
 	weston_compositor_shutdown(ec);
 	gbm_device_destroy(d->gbm);
+	drmDropMaster(d->drm.fd);
 	tty_destroy(d->tty);
 
 	wl_list_for_each_safe(input, next, &ec->input_device_list, link)
 		evdev_input_destroy(input);
 
 	free(d);
+}
+
+static void
+drm_compositor_set_modes(struct drm_compositor *compositor)
+{
+	struct drm_output *output;
+	struct drm_mode *drm_mode;
+	int ret;
+
+	wl_list_for_each(output, &compositor->base.output_list, base.link) {
+		drm_mode = (struct drm_mode *) output->base.current;
+		ret = drmModeSetCrtc(compositor->drm.fd, output->crtc_id,
+				     output->fb_id[output->current ^ 1], 0, 0,
+				     &output->connector_id, 1,
+				     &drm_mode->mode_info);
+		if (ret < 0) {
+			fprintf(stderr,
+				"failed to set mode %dx%d for output at %d,%d: %m",
+				drm_mode->base.width, drm_mode->base.height, 
+				output->base.x, output->base.y);
+		}
+	}
 }
 
 static void
@@ -800,6 +828,7 @@ vt_func(struct weston_compositor *compositor, int event)
 			wl_display_terminate(compositor->wl_display);
 		}
 		compositor->state = ec->prev_state;
+		drm_compositor_set_modes(ec);
 		weston_compositor_damage_all(compositor);
 		wl_list_for_each(input, &compositor->input_device_list, link)
 			evdev_add_devices(ec->udev, input);
@@ -809,10 +838,21 @@ vt_func(struct weston_compositor *compositor, int event)
 		ec->prev_state = compositor->state;
 		compositor->state = WESTON_COMPOSITOR_SLEEPING;
 
+		/* If we have a repaint scheduled (either from a
+		 * pending pageflip or the idle handler), make sure we
+		 * cancel that so we don't try to pageflip when we're
+		 * vt switched away.  The SLEEPING state will prevent
+		 * further attemps at repainting.  When we switch
+		 * back, we schedule a repaint, which will process
+		 * pending frame callbacks. */
+
+		wl_list_for_each(output, &ec->base.output_list, link) {
+			output->repaint_needed = 0;
+			drm_output_set_cursor(output, NULL);
+		}
+
 		wl_list_for_each(input, &compositor->input_device_list, link)
 			evdev_remove_devices(input);
-		wl_list_for_each(output, &ec->base.output_list, link)
-			drm_output_set_cursor(output, NULL);
 
 		if (drmDropMaster(ec->drm.fd) < 0)
 			fprintf(stderr, "failed to drop master: %m\n");

@@ -59,7 +59,6 @@ struct panel {
 	struct surface base;
 	struct window *window;
 	struct widget *widget;
-	struct window *menu;
 	struct wl_list launcher_list;
 };
 
@@ -133,6 +132,12 @@ sigchild_handler(int s)
 }
 
 static void
+menu_func(struct window *window, int index, void *data)
+{
+	printf("Selected index %d from a panel menu.\n", index);
+}
+
+static void
 show_menu(struct panel *panel, struct input *input, uint32_t time)
 {
 	int32_t x, y;
@@ -141,11 +146,9 @@ show_menu(struct panel *panel, struct input *input, uint32_t time)
 	};
 
 	input_get_position(input, &x, &y);
-	panel->menu = window_create_menu(window_get_display(panel->window),
-					 input, time, panel->window,
-					 x - 10, y - 10, NULL, entries, 4);
-
-	window_schedule_redraw(panel->menu);
+	window_show_menu(window_get_display(panel->window),
+			 input, time, panel->window,
+			 x - 10, y - 10, menu_func, entries, 4);
 }
 
 static void
@@ -530,7 +533,7 @@ unlock_dialog_create(struct desktop *desktop)
 	desktop_shell_set_lock_surface(desktop->shell,
 	       window_get_wl_shell_surface(dialog->window));
 
-	window_schedule_redraw(dialog->window);
+	window_schedule_resize(dialog->window, 260, 230);
 
 	return dialog;
 }
